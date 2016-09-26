@@ -11565,6 +11565,55 @@ function sheet_to_json(sheet, opts){
 	return out;
 }
 
+function sheet_to_json_arrays(sheet, opts){
+	var val, row, range, header = 0, offset = 1, r, hdr = [], isempty, R, C, v;
+	var o = opts != null ? opts : {};
+	var raw = o.raw;
+	if(sheet == null || sheet["!ref"] == null) return [];
+	range = o.range !== undefined ? o.range : sheet["!ref"];
+	
+	switch(typeof range) {
+		case 'string': r = safe_decode_range(range); break;
+		case 'number': r = safe_decode_range(sheet["!ref"]); r.s.r = range; break;
+		default: r = range;
+	}
+
+	var rr = encode_row(r.s.r);
+	var cols = new Array(r.e.c-r.s.c+1);
+	var out = new Array(r.e.r-r.s.r-offset+1);
+	var outi = 0;
+	for(C = r.s.c; C <= r.e.c; ++C) {
+		cols[C] = encode_col(C);
+		val = sheet[cols[C] + rr];
+	}
+
+	for (R = r.s.r; R <= r.e.r; ++R) {
+		rr = encode_row(R);
+		isempty = true;
+		row = [];
+		if(Object.defineProperty) Object.defineProperty(row, '__rowNum__', {value:R, enumerable:false});
+		else row.__rowNum__ = R;
+		for (C = r.s.c; C <= r.e.c; ++C) {
+			val = sheet[cols[C] + rr];
+			if(val === undefined || val.t === undefined) continue;
+			v = val.v;
+			switch(val.t){
+				case 'e': continue;
+				case 's': break;
+				case 'b': case 'n': break;
+				default: throw 'unrecognized type ' + val.t;
+			}
+			if(v !== undefined) {
+				row.push(raw ? v : format_cell(val,v));
+				isempty = false;
+			}
+		}
+		if(isempty === false) out[outi++] = row;
+	}
+	out.length = outi;
+	return out;
+}
+	
 function sheet_to_row_object_array(sheet, opts) { return sheet_to_json(sheet, opts != null ? opts : {}); }
 
 function sheet_to_csv(sheet, opts) {
@@ -11636,6 +11685,7 @@ var utils = {
 	make_formulae: sheet_to_formulae,
 	sheet_to_csv: sheet_to_csv,
 	sheet_to_json: sheet_to_json,
+	sheet_to_json_arrays: sheet_to_json_arrays,
 	sheet_to_formulae: sheet_to_formulae,
 	sheet_to_row_object_array: sheet_to_row_object_array
 };
