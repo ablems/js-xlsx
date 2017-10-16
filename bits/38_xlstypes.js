@@ -7,7 +7,7 @@ function parse_FILETIME(blob) {
 }
 
 /* [MS-OSHARED] 2.3.3.1.4 Lpstr */
-function parse_lpstr(blob, type, pad) {
+function parse_lpstr(blob, type, pad/*:?number*/) {
 	var str = blob.read_shift(0, 'lpstr');
 	if(pad) blob.l += (4 - ((str.length+1) & 3)) & 3;
 	return str;
@@ -28,8 +28,8 @@ function parse_VtStringBase(blob, stringType, pad) {
 	return parse_lpstr(blob, stringType, pad);
 }
 
-function parse_VtString(blob, t, pad) { return parse_VtStringBase(blob, t, pad === false ? 0: 4); }
-function parse_VtUnalignedString(blob, t) { if(!t) throw new Error("dafuq?"); return parse_VtStringBase(blob, t, 0); }
+function parse_VtString(blob, t/*:number*/, pad/*:?boolean*/) { return parse_VtStringBase(blob, t, pad === false ? 0: 4); }
+function parse_VtUnalignedString(blob, t/*:number*/) { if(!t) throw new Error("VtUnalignedString must have positive length"); return parse_VtStringBase(blob, t, 0); }
 
 /* [MS-OSHARED] 2.3.3.1.9 VtVecUnalignedLpstrValue */
 function parse_VtVecUnalignedLpstrValue(blob) {
@@ -68,7 +68,7 @@ function parse_VtVecHeadingPair(blob) {
 /* [MS-OLEPS] 2.18.1 Dictionary (uses 2.17, 2.16) */
 function parse_dictionary(blob,CodePage) {
 	var cnt = blob.read_shift(4);
-	var dict = {};
+	var dict/*:{[number]:string}*/ = ({}/*:any*/);
 	for(var j = 0; j != cnt; ++j) {
 		var pid = blob.read_shift(4);
 		var len = blob.read_shift(4);
@@ -82,7 +82,7 @@ function parse_dictionary(blob,CodePage) {
 function parse_BLOB(blob) {
 	var size = blob.read_shift(4);
 	var bytes = blob.slice(blob.l,blob.l+size);
-	if(size & 3 > 0) blob.l += (4 - (size & 3)) & 3;
+	if((size & 3) > 0) blob.l += (4 - (size & 3)) & 3;
 	return bytes;
 }
 
@@ -108,7 +108,7 @@ function parse_VtVector(blob, cb) {
 }
 
 /* [MS-OLEPS] 2.15 TypedPropertyValue */
-function parse_TypedPropertyValue(blob, type, _opts) {
+function parse_TypedPropertyValue(blob, type/*:number*/, _opts) {
 	var t = blob.read_shift(2), ret, opts = _opts||{};
 	blob.l += 2;
 	if(type !== VT_VARIANT)
@@ -123,8 +123,8 @@ function parse_TypedPropertyValue(blob, type, _opts) {
 		case 0x40 /*VT_FILETIME*/: return parse_FILETIME(blob);
 		case 0x41 /*VT_BLOB*/: return parse_BLOB(blob);
 		case 0x47 /*VT_CF*/: return parse_ClipboardData(blob);
-		case 0x50 /*VT_STRING*/: return parse_VtString(blob, t, !opts.raw && 4).replace(chr0,'');
-		case 0x51 /*VT_USTR*/: return parse_VtUnalignedString(blob, t, 4).replace(chr0,'');
+		case 0x50 /*VT_STRING*/: return parse_VtString(blob, t, !opts.raw).replace(chr0,'');
+		case 0x51 /*VT_USTR*/: return parse_VtUnalignedString(blob, t/*, 4*/).replace(chr0,'');
 		case 0x100C /*VT_VECTOR|VT_VARIANT*/: return parse_VtVecHeadingPair(blob);
 		case 0x101E /*VT_LPSTR*/: return parse_VtVecUnalignedLpstr(blob);
 		default: throw new Error("TypedPropertyValue unrecognized type " + type + " " + t);
@@ -149,7 +149,7 @@ function parse_PropertySet(blob, PIDSI) {
 	var NumProps = blob.read_shift(4);
 	var Props = [], i = 0;
 	var CodePage = 0;
-	var Dictionary = -1, DictObj;
+	var Dictionary = -1, DictObj/*:{[number]:string}*/ = ({}/*:any*/);
 	for(i = 0; i != NumProps; ++i) {
 		var PropID = blob.read_shift(4);
 		var Offset = blob.read_shift(4);
@@ -174,29 +174,26 @@ function parse_PropertySet(blob, PIDSI) {
 			if(piddsi.n == "CodePage") switch(PropH[piddsi.n]) {
 				case 0: PropH[piddsi.n] = 1252;
 					/* falls through */
-				case 10000: // OSX Roman
-				case 1252: // Windows Latin
-
-				case 874: // SB Windows Thai
-				case 1250: // SB Windows Central Europe
-				case 1251: // SB Windows Cyrillic
-				case 1253: // SB Windows Greek
-				case 1254: // SB Windows Turkish
-				case 1255: // SB Windows Hebrew
-				case 1256: // SB Windows Arabic
-				case 1257: // SB Windows Baltic
-				case 1258: // SB Windows Vietnam
-
-				case 932: // DB Windows Japanese Shift-JIS
-				case 936: // DB Windows Simplified Chinese GBK
-				case 949: // DB Windows Korean
-				case 950: // DB Windows Traditional Chinese Big5
-
-				case 1200: // UTF16LE
-				case 1201: // UTF16BE
-				case 65000: case -536: // UTF-7
-				case 65001: case -535: // UTF-8
-					set_cp(CodePage = PropH[piddsi.n]); break;
+				case 874:
+				case 932:
+				case 936:
+				case 949:
+				case 950:
+				case 1250:
+				case 1251:
+				case 1253:
+				case 1254:
+				case 1255:
+				case 1256:
+				case 1257:
+				case 1258:
+				case 10000:
+				case 1200:
+				case 1201:
+				case 1252:
+				case 65000: case -536:
+				case 65001: case -535:
+					set_cp(CodePage = PropH[piddsi.n]>>>0 & 0xFFFF); break;
 				default: throw new Error("Unsupported CodePage: " + PropH[piddsi.n]);
 			}
 		} else {
@@ -224,7 +221,7 @@ function parse_PropertySet(blob, PIDSI) {
 					case 0x13 /*VT_UI4*/: blob.l += 4; val = blob.read_shift(4); break;
 					case 0x05 /*VT_R8*/: blob.l += 4; val = blob.read_shift(8, 'f'); break;
 					case 0x0B /*VT_BOOL*/: blob.l += 4; val = parsebool(blob, 4); break;
-					case 0x40 /*VT_FILETIME*/: blob.l += 4; val = new Date(parse_FILETIME(blob)); break;
+					case 0x40 /*VT_FILETIME*/: blob.l += 4; val = parseDate(parse_FILETIME(blob)); break;
 					default: throw new Error("unparsed value: " + blob[blob.l]);
 				}
 				PropH[name] = val;
@@ -238,31 +235,32 @@ function parse_PropertySet(blob, PIDSI) {
 /* [MS-OLEPS] 2.21 PropertySetStream */
 function parse_PropertySetStream(file, PIDSI) {
 	var blob = file.content;
+	if(!blob) return ({}/*:any*/);
 	prep_blob(blob, 0);
 
-	var NumSets, FMTID0, FMTID1, Offset0, Offset1;
+	var NumSets, FMTID0, FMTID1, Offset0, Offset1 = 0;
 	blob.chk('feff', 'Byte Order: ');
 
 	var vers = blob.read_shift(2); // TODO: check version
 	var SystemIdentifier = blob.read_shift(4);
 	blob.chk(CFB.utils.consts.HEADER_CLSID, 'CLSID: ');
 	NumSets = blob.read_shift(4);
-	if(NumSets !== 1 && NumSets !== 2) throw "Unrecognized #Sets: " + NumSets;
+	if(NumSets !== 1 && NumSets !== 2) throw new Error("Unrecognized #Sets: " + NumSets);
 	FMTID0 = blob.read_shift(16); Offset0 = blob.read_shift(4);
 
-	if(NumSets === 1 && Offset0 !== blob.l) throw "Length mismatch";
+	if(NumSets === 1 && Offset0 !== blob.l) throw new Error("Length mismatch: " + Offset0 + " !== " + blob.l);
 	else if(NumSets === 2) { FMTID1 = blob.read_shift(16); Offset1 = blob.read_shift(4); }
 	var PSet0 = parse_PropertySet(blob, PIDSI);
 
-	var rval = { SystemIdentifier: SystemIdentifier };
+	var rval = ({ SystemIdentifier: SystemIdentifier }/*:any*/);
 	for(var y in PSet0) rval[y] = PSet0[y];
 	//rval.blob = blob;
 	rval.FMTID = FMTID0;
 	//rval.PSet0 = PSet0;
 	if(NumSets === 1) return rval;
-	if(blob.l !== Offset1) throw "Length mismatch 2: " + blob.l + " !== " + Offset1;
+	if(blob.l !== Offset1) throw new Error("Length mismatch 2: " + blob.l + " !== " + Offset1);
 	var PSet1;
-	try { PSet1 = parse_PropertySet(blob, null); } catch(e) { }
+	try { PSet1 = parse_PropertySet(blob, null); } catch(e) {/* empty */}
 	for(y in PSet1) rval[y] = PSet1[y];
 	rval.FMTID = [FMTID0, FMTID1]; // TODO: verify FMTID0/1
 	return rval;
@@ -270,6 +268,7 @@ function parse_PropertySetStream(file, PIDSI) {
 
 
 function parsenoop2(blob, length) { blob.read_shift(length); return null; }
+function writezeroes(n, o) { if(!o) o=new_buf(n); for(var j=0; j<n; ++j) o.write_shift(1, 0); return o; }
 
 function parslurp(blob, length, cb) {
 	var arr = [], target = blob.l + length;
@@ -278,38 +277,38 @@ function parslurp(blob, length, cb) {
 	return arr;
 }
 
-function parslurp2(blob, length, cb) {
-	var arr = [], target = blob.l + length, len = blob.read_shift(2);
-	while(len-- !== 0) arr.push(cb(blob, target - blob.l));
-	if(target !== blob.l) throw new Error("Slurp error");
-	return arr;
-}
+function parsebool(blob, length/*:number*/) { return blob.read_shift(length) === 0x1; }
+function writebool(v/*:any*/, o) { if(!o) o=new_buf(2); o.write_shift(2, +!!v); return o; }
 
-function parsebool(blob, length) { return blob.read_shift(length) === 0x1; }
-
-function parseuint16(blob) { return blob.read_shift(2, 'u'); }
-function parseuint16a(blob, length) { return parslurp(blob,length,parseuint16);}
+function parseuint16(blob/*::, length:?number, opts:?any*/) { return blob.read_shift(2, 'u'); }
+function writeuint16(v/*:number*/, o) { if(!o) o=new_buf(2); o.write_shift(2, v); return o; }
+function parseuint16a(blob, length/*:: :?number, opts:?any*/) { return parslurp(blob,length,parseuint16);}
 
 /* --- 2.5 Structures --- */
 
-/* [MS-XLS] 2.5.14 Boolean */
-var parse_Boolean = parsebool;
-
 /* [MS-XLS] 2.5.10 Bes (boolean or error) */
-function parse_Bes(blob) {
+function parse_Bes(blob/*::, length*/) {
 	var v = blob.read_shift(1), t = blob.read_shift(1);
 	return t === 0x01 ? v : v === 0x01;
+}
+function write_Bes(v, t/*:string*/, o) {
+	if(!o) o = new_buf(2);
+	o.write_shift(1, +v);
+	o.write_shift(1, t == 'e' ? 1 : 0);
+	return o;
 }
 
 /* [MS-XLS] 2.5.240 ShortXLUnicodeString */
 function parse_ShortXLUnicodeString(blob, length, opts) {
-	var cch = blob.read_shift(1);
+	var cch = blob.read_shift(opts && opts.biff >= 12 ? 2 : 1);
 	var width = 1, encoding = 'sbcs-cont';
 	var cp = current_codepage;
 	if(opts && opts.biff >= 8) current_codepage = 1200;
-	if(opts === undefined || opts.biff !== 5) {
+	if(!opts || opts.biff == 8 ) {
 		var fHighByte = blob.read_shift(1);
 		if(fHighByte) { width = 2; encoding = 'dbcs-cont'; }
+	} else if(opts.biff == 12) {
+		width = 2; encoding = 'wstr';
 	}
 	var o = cch ? blob.read_shift(cch, encoding) : "";
 	current_codepage = cp;
@@ -323,7 +322,7 @@ function parse_XLUnicodeRichExtendedString(blob) {
 	var cch = blob.read_shift(2), flags = blob.read_shift(1);
 	var fHighByte = flags & 0x1, fExtSt = flags & 0x4, fRichSt = flags & 0x8;
 	var width = 1 + (flags & 0x1); // 0x0 -> utf8, 0x1 -> dbcs
-	var cRun, cbExtRst;
+	var cRun = 0, cbExtRst;
 	var z = {};
 	if(fRichSt) cRun = blob.read_shift(2);
 	if(fExtSt) cbExtRst = blob.read_shift(4);
@@ -340,6 +339,10 @@ function parse_XLUnicodeRichExtendedString(blob) {
 /* 2.5.296 XLUnicodeStringNoCch */
 function parse_XLUnicodeStringNoCch(blob, cch, opts) {
 	var retval;
+	if(opts) {
+		if(opts.biff >= 2 && opts.biff <= 5) return blob.read_shift(cch, 'sbcs-cont');
+		if(opts.biff >= 12) return blob.read_shift(cch, 'dbcs-cont');
+	}
 	var fHighByte = blob.read_shift(1);
 	if(fHighByte===0) { retval = blob.read_shift(cch, 'sbcs-cont'); }
 	else { retval = blob.read_shift(cch, 'dbcs-cont'); }
@@ -348,23 +351,29 @@ function parse_XLUnicodeStringNoCch(blob, cch, opts) {
 
 /* 2.5.294 XLUnicodeString */
 function parse_XLUnicodeString(blob, length, opts) {
-	var cch = blob.read_shift(opts !== undefined && opts.biff > 0 && opts.biff < 8 ? 1 : 2);
+	var cch = blob.read_shift(opts && opts.biff == 2 ? 1 : 2);
 	if(cch === 0) { blob.l++; return ""; }
 	return parse_XLUnicodeStringNoCch(blob, cch, opts);
 }
 /* BIFF5 override */
 function parse_XLUnicodeString2(blob, length, opts) {
-	if(opts.biff !== 5 && opts.biff !== 2) return parse_XLUnicodeString(blob, length, opts);
+	if(opts.biff > 5) return parse_XLUnicodeString(blob, length, opts);
 	var cch = blob.read_shift(1);
 	if(cch === 0) { blob.l++; return ""; }
 	return blob.read_shift(cch, 'sbcs-cont');
 }
 
 /* [MS-XLS] 2.5.61 ControlInfo */
-var parse_ControlInfo = parsenoop;
+function parse_ControlInfo(blob, length, opts) {
+	var flags = blob.read_shift(1);
+	blob.l++;
+	var accel = blob.read_shift(2);
+	blob.l += 2;
+	return [flags, accel];
+}
 
 /* [MS-OSHARED] 2.3.7.6 URLMoniker TODO: flags */
-var parse_URLMoniker = function(blob, length) {
+function parse_URLMoniker(blob/*::, length, opts*/) {
 	var len = blob.read_shift(4), start = blob.l;
 	var extra = false;
 	if(len > 24) {
@@ -376,10 +385,10 @@ var parse_URLMoniker = function(blob, length) {
 	var url = blob.read_shift((extra?len-24:len)>>1, 'utf16le').replace(chr0,"");
 	if(extra) blob.l += 24;
 	return url;
-};
+}
 
 /* [MS-OSHARED] 2.3.7.8 FileMoniker TODO: all fields */
-var parse_FileMoniker = function(blob, length) {
+function parse_FileMoniker(blob, length) {
 	var cAnti = blob.read_shift(2);
 	var ansiLength = blob.read_shift(4);
 	var ansiPath = blob.read_shift(ansiLength, 'cstr');
@@ -391,27 +400,27 @@ var parse_FileMoniker = function(blob, length) {
 	var usKeyValue = blob.read_shift(2);
 	var unicodePath = blob.read_shift(cbUnicodePathBytes>>1, 'utf16le').replace(chr0,"");
 	return unicodePath;
-};
+}
 
 /* [MS-OSHARED] 2.3.7.2 HyperlinkMoniker TODO: all the monikers */
-var parse_HyperlinkMoniker = function(blob, length) {
+function parse_HyperlinkMoniker(blob, length) {
 	var clsid = blob.read_shift(16); length -= 16;
 	switch(clsid) {
 		case "e0c9ea79f9bace118c8200aa004ba90b": return parse_URLMoniker(blob, length);
 		case "0303000000000000c000000000000046": return parse_FileMoniker(blob, length);
-		default: throw "unsupported moniker " + clsid;
+		default: throw new Error("Unsupported Moniker " + clsid);
 	}
-};
+}
 
 /* [MS-OSHARED] 2.3.7.9 HyperlinkString */
-var parse_HyperlinkString = function(blob, length) {
+function parse_HyperlinkString(blob, length) {
 	var len = blob.read_shift(4);
 	var o = blob.read_shift(len, 'utf16le').replace(chr0, "");
 	return o;
-};
+}
 
 /* [MS-OSHARED] 2.3.7.1 Hyperlink Object TODO: unify params with XLSX */
-var parse_Hyperlink = function(blob, length) {
+function parse_Hyperlink(blob, length) {
 	var end = blob.l + length;
 	var sVer = blob.read_shift(4);
 	if(sVer !== 2) throw new Error("Unrecognized streamVersion: " + sVer);
@@ -424,12 +433,12 @@ var parse_Hyperlink = function(blob, length) {
 	if((flags & 0x0101) === 0x0001) oleMoniker = parse_HyperlinkMoniker(blob, end - blob.l);
 	if(flags & 0x0008) location = parse_HyperlinkString(blob, end - blob.l);
 	if(flags & 0x0020) guid = blob.read_shift(16);
-	if(flags & 0x0040) fileTime = parse_FILETIME(blob, 8);
+	if(flags & 0x0040) fileTime = parse_FILETIME(blob/*, 8*/);
 	blob.l = end;
 	var target = (targetFrameName||moniker||oleMoniker);
 	if(location) target+="#"+location;
 	return {Target: target};
-};
+}
 
 /* 2.5.178 LongRGBA */
 function parse_LongRGBA(blob, length) { var r = blob.read_shift(1), g = blob.read_shift(1), b = blob.read_shift(1), a = blob.read_shift(1); return [r,g,b,a]; }
